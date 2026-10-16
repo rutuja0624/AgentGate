@@ -1,0 +1,421 @@
+openapi: 3.1.0
+info:
+  title: AgentGate Engine API
+  version: 0.1.0
+  description: Internal verification and review engine API for AgentGate.
+servers:
+  - url: http://localhost:8001
+    description: Local Engine Service
+
+security:
+  - InternalTokenAuth: []
+
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Engine service is operational
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service, version]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: agentgate-engine
+                  version:
+                    type: string
+                    example: 0.1.0
+
+  /internal/reviews:
+    post:
+      summary: Enqueue pull request review job
+      operationId: createReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewCreateRequest'
+      responses:
+        '202':
+          description: Review job enqueued successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueuedResponse'
+        '400':
+          description: Invalid request payload or oversized diff
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid internal token
+    get:
+      summary: List reviews
+      operationId: listReviews
+      parameters:
+        - name: repo
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated review list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReviewSummary'
+                  next_cursor:
+                    type: string
+                    nullable: true
+
+  /internal/reviews/{id}:
+    get:
+      summary: Get review details by ID
+      operationId: getReview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Complete review report including findings, tool runs, and impact
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewDetail'
+        '404':
+          description: Review not found
+
+  /internal/reviews/{id}/status:
+    post:
+      summary: Update PR commit status on GitHub for a review
+      operationId: updateReviewCommitStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewStatusUpdateRequest'
+      responses:
+        '200':
+          description: GitHub commit status updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, github_status_set]
+                properties:
+                  status:
+                    type: string
+                    example: updated
+                  github_status_set:
+                    type: string
+                    enum: [success, failure, pending]
+
+  /internal/analyze-diff:
+    post:
+      summary: Synchronous diff review (MCP & Benchmark)
+      operationId: analyzeDiff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeDiffRequest'
+      responses:
+        '200':
+          description: Synchronous review result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeDiffResponse'
+
+components:
+  securitySchemes:
+    InternalTokenAuth:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+
+  schemas:
+    ReviewCreateRequest:
+      type: object
+      required: [repo, pr_number, head_sha]
+      properties:
+        repo:
+          type: string
+          example: owner/repo
+        pr_number:
+          type: integer
+          example: 42
+        head_sha:
+          type: string
+          example: 8c3d9a1f2b4e6d7c8a9b0c1d2e3f4a5b6c7d8e9f
+        base_sha:
+          type: string
+          nullable: true
+          example: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+        mode:
+          type: string
+          enum: [full, llm_only, llm_static]
+          default: full
+
+    ReviewQueuedResponse:
+      type: object
+      required: [review_id, status]
+      properties:
+        review_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running]
+
+    ReviewSummary:
+      type: object
+      required: [id, repo, pr_number, head_sha, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        repo:
+          type: string
+        pr_number:
+          type: integer
+        head_sha:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        risk_score:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100
+        verdict:
+          type: string
+          enum: [APPROVE, REVIEW, BLOCK]
+          nullable: true
+        mode:
+          type: string
+          enum: [full, llm_only, llm_static]
+        duration_ms:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ReviewDetail:
+      allOf:
+        - $ref: '#/components/schemas/ReviewSummary'
+        - type: object
+          required: [findings, tool_runs, impact]
+          properties:
+            base_sha:
+              type: string
+              nullable: true
+            tokens_in:
+              type: integer
+              default: 0
+            tokens_out:
+              type: integer
+              default: 0
+            cost_usd:
+              type: number
+              format: float
+              default: 0.0
+            error:
+              type: string
+              nullable: true
+            findings:
+              type: array
+              items:
+                $ref: '#/components/schemas/Finding'
+            tool_runs:
+              type: array
+              items:
+                $ref: '#/components/schemas/ToolRun'
+            impact:
+              type: array
+              items:
+                $ref: '#/components/schemas/Impact'
+
+    Finding:
+      type: object
+      required: [id, reviewer, severity, category, file, title, explanation, confidence, evidence_type, verified]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reviewer:
+          type: string
+          enum: [security, correctness, design, tests, static]
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        category:
+          type: string
+          example: sql_injection
+        file:
+          type: string
+          example: app/users.py
+        line:
+          type: integer
+          nullable: true
+          example: 42
+        title:
+          type: string
+          example: Potential SQL injection via string formatting
+        explanation:
+          type: string
+        suggested_fix:
+          type: string
+          nullable: true
+        confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.95
+        evidence_type:
+          type: string
+          enum: [test_failure, static_rule, secret_match, llm_only]
+        evidence:
+          type: object
+          additionalProperties: true
+        verified:
+          type: boolean
+          example: true
+
+    ToolRun:
+      type: object
+      required: [tool, exit_code, duration_ms, summary]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tool:
+          type: string
+          enum: [semgrep, radon, secrets, pytest]
+        exit_code:
+          type: integer
+          example: 0
+        duration_ms:
+          type: integer
+          example: 1250
+        summary:
+          type: object
+          additionalProperties: true
+        raw_output_ref:
+          type: string
+          nullable: true
+
+    Impact:
+      type: object
+      required: [changed_file, impacted_file, distance]
+      properties:
+        changed_file:
+          type: string
+          example: app/models/user.py
+        impacted_file:
+          type: string
+          example: app/api/auth.py
+        distance:
+          type: integer
+          example: 1
+
+    ReviewStatusUpdateRequest:
+      type: object
+      required: [state, by, comment]
+      properties:
+        state:
+          type: string
+          enum: [approved, rejected]
+        by:
+          type: string
+          example: admin
+        comment:
+          type: string
+          example: Approved after reviewing test evidence.
+
+    AnalyzeDiffRequest:
+      type: object
+      required: [diff]
+      properties:
+        diff:
+          type: string
+          description: Unified diff text
+        context_files:
+          type: array
+          items:
+            type: string
+          default: []
+        mode:
+          type: string
+          enum: [full, llm_only, llm_static]
+          default: llm_static
+
+    AnalyzeDiffResponse:
+      type: object
+      required: [risk_score, verdict, findings]
+      properties:
+        risk_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        verdict:
+          type: string
+          enum: [APPROVE, REVIEW, BLOCK]
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Finding'
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string

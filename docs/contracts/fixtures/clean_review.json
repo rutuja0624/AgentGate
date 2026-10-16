@@ -1,0 +1,61 @@
+{
+  "id": "e6a2b347-1945-4221-a083-057d23f39a11",
+  "repo": "agentgate/sample-service",
+  "pr_number": 12,
+  "head_sha": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+  "base_sha": "f0e1d2c3b4a596877869504132231405a6b7c8d9",
+  "status": "completed",
+  "risk_score": 8,
+  "verdict": "APPROVE",
+  "mode": "full",
+  "duration_ms": 3420,
+  "tokens_in": 1240,
+  "tokens_out": 380,
+  "cost_usd": 0.0028,
+  "error": null,
+  "created_at": "2026-10-16T12:00:00Z",
+  "completed_at": "2026-10-16T12:00:04Z",
+  "findings": [
+    {
+      "id": "11111111-2222-3333-4444-555555555555",
+      "review_id": "e6a2b347-1945-4221-a083-057d23f39a11",
+      "reviewer": "correctness",
+      "severity": "info",
+      "category": "docstring",
+      "file": "app/calculator.py",
+      "line": 15,
+      "title": "Missing docstring for helper function",
+      "explanation": "Function `_normalize` was added without type annotations or docstring.",
+      "suggested_fix": "Add a summary docstring and return type hint.",
+      "confidence": 0.75,
+      "evidence_type": "llm_only",
+      "evidence": {},
+      "verified": false
+    }
+  ],
+  "tool_runs": [
+    {
+      "id": "22222222-3333-4444-5555-666666666666",
+      "review_id": "e6a2b347-1945-4221-a083-057d23f39a11",
+      "tool": "semgrep",
+      "exit_code": 0,
+      "duration_ms": 850,
+      "summary": { "findings_count": 0 }
+    },
+    {
+      "id": "33333333-4444-5555-6666-777777777777",
+      "review_id": "e6a2b347-1945-4221-a083-057d23f39a11",
+      "tool": "pytest",
+      "exit_code": 0,
+      "duration_ms": 1200,
+      "summary": { "passed": 14, "failed": 0, "errors": 0 }
+    }
+  ],
+  "impact": [
+    {
+      "changed_file": "app/calculator.py",
+      "impacted_file": "app/main.py",
+      "distance": 1
+    }
+  ]
+}

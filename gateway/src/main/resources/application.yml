@@ -1,0 +1,43 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: agentgate-gateway
+  datasource:
+    url: ${GATEWAY_DB_URL:jdbc:postgresql://localhost:5432/agentgate?currentSchema=gateway}
+    username: ${GATEWAY_DB_USER:agentgate}
+    password: ${GATEWAY_DB_PASSWORD:agentgate}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: gateway
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    schemas: gateway
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+    prometheus:
+      enabled: true
+
+agentgate:
+  jwt:
+    secret: ${JWT_SECRET:default-jwt-secret-must-be-at-least-32-characters-long}
+    expiration-ms: 86400000 # 24 hours
+  webhook:
+    secret: ${GITHUB_WEBHOOK_SECRET:default-webhook-secret-32-chars-long}
+  engine:
+    base-url: ${ENGINE_BASE_URL:http://localhost:8001}
+    internal-token: ${ENGINE_INTERNAL_TOKEN:agentgate_internal_secret_change_in_prod}

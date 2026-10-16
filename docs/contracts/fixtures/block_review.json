@@ -1,0 +1,90 @@
+{
+  "id": "f7b3c458-2056-5332-b194-168e34f40b22",
+  "repo": "agentgate/sample-service",
+  "pr_number": 13,
+  "head_sha": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1",
+  "base_sha": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+  "status": "completed",
+  "risk_score": 88,
+  "verdict": "BLOCK",
+  "mode": "full",
+  "duration_ms": 4820,
+  "tokens_in": 2840,
+  "tokens_out": 760,
+  "cost_usd": 0.0072,
+  "error": null,
+  "created_at": "2026-10-16T12:05:00Z",
+  "completed_at": "2026-10-16T12:05:05Z",
+  "findings": [
+    {
+      "id": "44444444-5555-6666-7777-888888888888",
+      "review_id": "f7b3c458-2056-5332-b194-168e34f40b22",
+      "reviewer": "security",
+      "severity": "critical",
+      "category": "sql_injection",
+      "file": "app/users.py",
+      "line": 14,
+      "title": "SQL Injection vulnerability via formatted string query",
+      "explanation": "User input `name` is interpolated directly into an unparameterized SQL query `SELECT * FROM users WHERE name = '%s' % name`.",
+      "suggested_fix": "Use parameterized queries: `cursor.execute('SELECT * FROM users WHERE name = ?', (name,))`",
+      "confidence": 0.99,
+      "evidence_type": "static_rule",
+      "evidence": {
+        "rule_id": "agentgate.rules.sql-injection-format",
+        "tool": "semgrep",
+        "line_content": "query = \"SELECT * FROM users WHERE name = '%s'\" % name"
+      },
+      "verified": true
+    },
+    {
+      "id": "55555555-6666-7777-8888-999999999999",
+      "review_id": "f7b3c458-2056-5332-b194-168e34f40b22",
+      "reviewer": "correctness",
+      "severity": "high",
+      "category": "test_failure",
+      "file": "tests/test_users.py",
+      "line": 28,
+      "title": "Regression: User lookup test fails after query change",
+      "explanation": "Pytest execution inside isolated sandbox resulted in test failure `test_get_user_with_special_characters`.",
+      "suggested_fix": "Sanitize query input parameters to prevent syntax error on apostrophes.",
+      "confidence": 1.0,
+      "evidence_type": "test_failure",
+      "evidence": {
+        "test_name": "tests/test_users.py::test_get_user_with_special_characters",
+        "failure_message": "sqlite3.OperationalError: near \"O\": syntax error",
+        "sandbox_exit_code": 1
+      },
+      "verified": true
+    }
+  ],
+  "tool_runs": [
+    {
+      "id": "66666666-7777-8888-9999-000000000000",
+      "review_id": "f7b3c458-2056-5332-b194-168e34f40b22",
+      "tool": "semgrep",
+      "exit_code": 1,
+      "duration_ms": 940,
+      "summary": { "findings_count": 1, "rule_triggered": "agentgate.rules.sql-injection-format" }
+    },
+    {
+      "id": "77777777-8888-9999-0000-111111111111",
+      "review_id": "f7b3c458-2056-5332-b194-168e34f40b22",
+      "tool": "pytest",
+      "exit_code": 1,
+      "duration_ms": 1540,
+      "summary": { "passed": 13, "failed": 1, "errors": 0, "new_failures": 1 }
+    }
+  ],
+  "impact": [
+    {
+      "changed_file": "app/users.py",
+      "impacted_file": "app/api/auth.py",
+      "distance": 1
+    },
+    {
+      "changed_file": "app/users.py",
+      "impacted_file": "app/main.py",
+      "distance": 2
+    }
+  ]
+}

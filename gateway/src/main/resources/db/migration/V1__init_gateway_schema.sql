@@ -1,0 +1,53 @@
+-- V1: Initialize gateway schema matching BUILD_PLAN Section 6.2
+
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pull_requests (
+    id BIGSERIAL PRIMARY KEY,
+    repo VARCHAR(255) NOT NULL,
+    pr_number INTEGER NOT NULL,
+    title VARCHAR(500) NOT NULL,
+    author VARCHAR(100) NOT NULL,
+    head_sha VARCHAR(64) NOT NULL,
+    engine_review_id UUID,
+    state VARCHAR(50) DEFAULT 'PENDING' NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT uq_repo_pr_head UNIQUE (repo, pr_number, head_sha)
+);
+
+CREATE TABLE IF NOT EXISTS decisions (
+    id BIGSERIAL PRIMARY KEY,
+    pull_request_id BIGINT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+    decision VARCHAR(50) NOT NULL,
+    comment TEXT NOT NULL,
+    decided_by BIGINT NOT NULL REFERENCES users(id),
+    decided_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    actor VARCHAR(100) NOT NULL,
+    action VARCHAR(100) NOT NULL,
+    entity_type VARCHAR(100) NOT NULL,
+    entity_id VARCHAR(255) NOT NULL,
+    details JSONB
+);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    id BIGSERIAL PRIMARY KEY,
+    delivery_id VARCHAR(100) NOT NULL UNIQUE,
+    received_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    event VARCHAR(100) NOT NULL,
+    status VARCHAR(50) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_at ON audit_log(at);
+CREATE INDEX IF NOT EXISTS idx_pull_requests_state ON pull_requests(state);

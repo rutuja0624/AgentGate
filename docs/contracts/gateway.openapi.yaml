@@ -1,0 +1,408 @@
+openapi: 3.1.0
+info:
+  title: AgentGate Gateway API
+  version: 0.1.0
+  description: Public API for AgentGate managing webhooks, auth, PR governance, decisions, and audit logging.
+servers:
+  - url: http://localhost:8080
+    description: Local Gateway Service
+
+paths:
+  /health:
+    get:
+      summary: Gateway health check
+      security: []
+      responses:
+        '200':
+          description: Gateway is operational
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+                  service:
+                    type: string
+                    example: agentgate-gateway
+
+  /api/auth/login:
+    post:
+      summary: Authenticate user and issue JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  example: adminpassword
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expiresAt, username, role]
+                properties:
+                  token:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  username:
+                    type: string
+                  role:
+                    type: string
+                    enum: [ADMIN, REVIEWER]
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /webhooks/github:
+    post:
+      summary: Ingress for GitHub Pull Request webhooks
+      security: []
+      parameters:
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema:
+            type: string
+          description: HMAC-SHA256 signature calculated with webhook secret
+        - name: X-GitHub-Delivery
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Unique delivery GUID for idempotency
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema:
+            type: string
+            example: pull_request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '202':
+          description: Webhook received and review triggered
+        '200':
+          description: Webhook ignored (duplicate delivery or unmonitored event)
+        '400':
+          description: Missing required headers or payload
+        '401':
+          description: Invalid HMAC signature
+
+  /api/pull-requests:
+    get:
+      summary: List tracked pull requests
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, REVIEWED, APPROVED, REJECTED]
+        - name: repo
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated pull requests
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [content, totalElements, totalPages, number]
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PullRequestSummary'
+                  totalElements:
+                    type: integer
+                  totalPages:
+                    type: integer
+                  number:
+                    type: integer
+
+  /api/pull-requests/{id}:
+    get:
+      summary: Get pull request with associated engine review details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Merged PR and review details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PullRequestDetail'
+        '404':
+          description: Pull request not found
+
+  /api/pull-requests/{id}/decision:
+    post:
+      summary: Record human approval or rejection decision
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, comment]
+              properties:
+                decision:
+                  type: string
+                  enum: [APPROVED, REJECTED]
+                comment:
+                  type: string
+                  minLength: 3
+                  example: Verified test run and approved merge.
+      responses:
+        '200':
+          description: Decision recorded and audit entry created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionRecord'
+
+  /api/audit:
+    get:
+      summary: Query immutable audit log
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: entity
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Paginated audit log records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [content, totalElements]
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLogEntry'
+                  totalElements:
+                    type: integer
+
+  /api/metrics/summary:
+    get:
+      summary: Summary metrics for dashboard
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Metrics summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [totalReviews, verdictCounts, averageRiskScore, totalCostUsd]
+                properties:
+                  totalReviews:
+                    type: integer
+                  verdictCounts:
+                    type: object
+                    properties:
+                      APPROVE:
+                        type: integer
+                      REVIEW:
+                        type: integer
+                      BLOCK:
+                        type: integer
+                  averageRiskScore:
+                    type: number
+                    format: float
+                  totalCostUsd:
+                    type: number
+                    format: float
+
+  /api/benchmark/latest:
+    get:
+      summary: Fetch latest benchmark results
+      security: []
+      responses:
+        '200':
+          description: Latest benchmark metrics JSON
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    PullRequestSummary:
+      type: object
+      required: [id, repo, prNumber, title, author, headSha, state, createdAt]
+      properties:
+        id:
+          type: integer
+        repo:
+          type: string
+        prNumber:
+          type: integer
+        title:
+          type: string
+        author:
+          type: string
+        headSha:
+          type: string
+        engineReviewId:
+          type: string
+          format: uuid
+          nullable: true
+        riskScore:
+          type: integer
+          nullable: true
+        verdict:
+          type: string
+          nullable: true
+        state:
+          type: string
+          enum: [PENDING, REVIEWED, APPROVED, REJECTED]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PullRequestDetail:
+      allOf:
+        - $ref: '#/components/schemas/PullRequestSummary'
+        - type: object
+          properties:
+            review:
+              type: object
+              nullable: true
+              additionalProperties: true
+            decisions:
+              type: array
+              items:
+                $ref: '#/components/schemas/DecisionRecord'
+
+    DecisionRecord:
+      type: object
+      required: [id, pullRequestId, decision, comment, decidedBy, decidedAt]
+      properties:
+        id:
+          type: integer
+        pullRequestId:
+          type: integer
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+        comment:
+          type: string
+        decidedBy:
+          type: string
+        decidedAt:
+          type: string
+          format: date-time
+
+    AuditLogEntry:
+      type: object
+      required: [id, at, actor, action, entityType, entityId]
+      properties:
+        id:
+          type: integer
+        at:
+          type: string
+          format: date-time
+        actor:
+          type: string
+        action:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    ApiError:
+      type: object
+      required: [timestamp, status, error, message, path]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+        path:
+          type: string
